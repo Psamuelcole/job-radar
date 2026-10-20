@@ -1,0 +1,47 @@
+name: Job Radar
+
+on:
+  schedule:
+    - cron: "*/15 * * * *"   # check job feeds every 15 minutes
+    - cron: "0 19 * * *"     # daily report at 8pm Lagos time (19:00 UTC)
+  workflow_dispatch:
+    inputs:
+      mode:
+        description: "jobs or report"
+        default: "jobs"
+
+permissions:
+  contents: write
+
+concurrency:
+  group: job-radar
+  cancel-in-progress: false
+
+jobs:
+  radar:
+    runs-on: ubuntu-latest
+    timeout-minutes: 10
+    steps:
+      - uses: actions/checkout@v4
+
+      - uses: actions/setup-python@v5
+        with:
+          python-version: "3.12"
+
+      - name: Run
+        env:
+          TELEGRAM_BOT_TOKEN: ${{ secrets.TELEGRAM_BOT_TOKEN }}
+          TELEGRAM_CHAT_ID: ${{ secrets.TELEGRAM_CHAT_ID }}
+          DAILY_COUNT_CSV_URL: ${{ secrets.DAILY_COUNT_CSV_URL }}
+        run: |
+          MODE="${{ github.event.inputs.mode }}"
+          if [ "${{ github.event.schedule }}" = "0 19 * * *" ]; then MODE=report; fi
+          python radar.py "${MODE:-jobs}"
+
+      - name: Save seen jobs
+        run: |
+          git config user.name "job-radar"
+          git config user.email "job-radar@users.noreply.github.com"
+          git add seen.json
+          git diff --cached --quiet || git commit -m "Update seen jobs"
+          git pull --rebase --quiet && git push --quiet
