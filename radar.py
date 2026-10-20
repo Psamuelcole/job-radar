@@ -23,8 +23,10 @@ FEEDS = [
     "https://weworkremotely.com/remote-jobs.rss",
     "https://remotive.com/remote-jobs/feed/marketing",
     "https://remoteok.com/remote-jobs.rss",
-    "https://himalayas.app/jobs/rss",
 ]
+# Jobicy lists jobs with a clear location field; "anywhere" means open worldwide.
+# Their rules allow checking at most once an hour, so it runs only at the top of the hour.
+JOBICY_URL = "https://jobicy.com/api/v2/remote-jobs?count=50&geo=anywhere&industry=marketing"
 MICRO1_SITEMAP = "https://jobs.micro1.ai/sitemap.xml"
 MAX_AGE_MINUTES = 180          # only jobs posted in the last 3 hours
 MICRO1_FLOOD_LIMIT = 30        # first run marks old micro1 posts as seen without alerting
@@ -104,9 +106,25 @@ def parse_rss(xml_text):
             "link": d.get("link") or d.get("guid", ""),
             "body": re.sub(r"<[^>]+>", " ", unescape(d.get("description") or d.get("summary") or d.get("content") or "")),
             "creator": d.get("creator", ""),
+            "location": d.get("region") or d.get("location") or "",
             "published": d.get("pubDate") or d.get("published") or d.get("updated") or d.get("date", ""),
         })
     return items
+
+
+def fetch_jobicy():
+    data = json.loads(fetch(JOBICY_URL))
+    out = []
+    for j in data.get("jobs", []):
+        out.append({
+            "title": unescape(j.get("jobTitle", "")),
+            "link": j.get("url", ""),
+            "body": unescape(j.get("jobExcerpt", "")),
+            "creator": j.get("companyName", ""),
+            "location": j.get("jobGeo", "") or "Anywhere",
+            "published": j.get("pubDate", ""),
+        })
+    return out
 
 
 def age_minutes(published):
@@ -152,7 +170,14 @@ def score(job):
         priority = "B - GTM role"
     else:
         priority = "C - marketing or growth role"
-    if NIGERIA_RE.search(text):
+    loc = job.get("location", "").lower().strip()
+    if loc:
+        # trust the board's own location field when it has one
+        if NIGERIA_RE.search(loc) or WORLDWIDE_RE.search(loc) or "anywhere" in loc:
+            elig = "open to Nigeria or worldwide"
+        else:
+            elig = "restricted"
+    elif NIGERIA_RE.search(text):
         elig = "open to Nigeria or worldwide"
     elif RESTRICTED_RE.search(text):
         elig = "restricted"
@@ -169,10 +194,9 @@ def score(job):
 
 
 def keep(j):
-    return (j["matches_role"] and j["eligibility"] != "restricted"
-            and j["age"] <= MAX_AGE_MINUTES and j["link"]
-            and (j["eligibility"] == "open to Nigeria or worldwide"
-                 or j["priority"][0] in "AB"))
+    # strict: only roles that clearly say Nigeria, Africa, worldwide or anywhere
+    return (j["matches_role"] and j["eligibility"] == "open to Nigeria or worldwide"
+            and j["age"] <= MAX_AGE_MINUTES and bool(j["link"]))
 
 # ---------------- micro1 ----------------
 
@@ -221,6 +245,11 @@ def run_jobs():
             jobs += parse_rss(fetch(url))
         except Exception as e:
             print("feed failed:", url, e)
+    if datetime.now(timezone.utc).minute < 15:
+        try:
+            jobs += fetch_jobicy()
+        except Exception as e:
+            print("Jobicy failed:", e)
     sent = 0
     for job in jobs:
         j = score(job)
