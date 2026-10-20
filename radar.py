@@ -11,6 +11,7 @@ import os
 import re
 import sys
 import time
+import urllib.error
 import urllib.request
 import xml.etree.ElementTree as ET
 from datetime import datetime, timezone
@@ -54,7 +55,14 @@ def send_telegram(text):
     req = urllib.request.Request(
         f"https://api.telegram.org/bot{TOKEN}/sendMessage", data=data,
         headers={"Content-Type": "application/json"})
-    urllib.request.urlopen(req, timeout=30).read()
+    try:
+        urllib.request.urlopen(req, timeout=30).read()
+    except urllib.error.HTTPError as e:
+        reason = e.read().decode("utf-8", errors="replace")
+        hint = {401: "the bot token is wrong", 400: "the chat ID is wrong, or you have not pressed Start in the bot chat",
+                403: "the bot is blocked or cannot message this chat", 404: "the bot token is wrong or incomplete"}.get(e.code, "")
+        print(f"::error::Telegram refused the message ({e.code}): {hint}. Details: {reason}")
+        raise
     time.sleep(1)  # stay well under Telegram's rate limit
 
 
