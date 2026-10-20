@@ -4,6 +4,7 @@ to Nigeria, skips jobs already sent, and alerts Telegram. Runs on GitHub Actions
 Modes:
   python radar.py jobs    -> check feeds and micro1, send new matches
   python radar.py report  -> send the daily application count
+  python radar.py test    -> send one test message to Telegram
 """
 import json
 import os
@@ -239,4 +240,9 @@ def run_report():
 
 if __name__ == "__main__":
     mode = sys.argv[1] if len(sys.argv) > 1 else "jobs"
-    run_report() if mode == "report" else run_jobs()
+    if mode == "test":
+        send_telegram("Job Radar is connected. Job alerts will arrive here.")
+    elif mode == "report":
+        run_report()
+    else:
+        run_jobs()

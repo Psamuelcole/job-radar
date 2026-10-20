@@ -7,7 +7,7 @@ on:
   workflow_dispatch:
     inputs:
       mode:
-        description: "jobs or report"
+        description: "jobs, report or test"
         default: "jobs"
 
 permissions:
